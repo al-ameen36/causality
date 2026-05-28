@@ -1,60 +1,32 @@
-import { useEffect, useState } from "react";
-import { Handle, Position } from "@xyflow/react";
+import type { EventWithMetadata } from '#/types/nodes'
+import { cn } from '#/utils/utils'
+import styles from '#/styles/event.module.css'
 
-type EventNodeProps = {
-  data: {
-    label: string;
-    index: number;
-    total: number;
-  };
-};
+type Props = {
+  data: EventWithMetadata
+}
 
-export function EventNode({ data }: EventNodeProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-
-  const isOutcome = data.index === data.total - 1;
-
+export function EventItem({ data }: Props) {
+  const className = cn(
+    'p-6 rounded-xl max-w-[400px] border border-blue-900',
+    data.isFirst ? 'bg-black/93' : 'bg-gray-200',
+  )
   return (
-    <div
-      style={{ transitionDelay: `${data.index * 40}ms` }}
-      className={[
-        "min-w-[260px] rounded-2xl border px-4 py-3",
-        "transition-all duration-300 ease-out",
-        mounted ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0",
-        isOutcome
-          ? "border-zinc-900 bg-zinc-900 shadow-lg"
-          : "border-zinc-200 bg-white shadow-sm",
-      ].join(" ")}
-    >
-      {data.index > 0 && (
-        <Handle type="target" position={Position.Top} className="!border-zinc-300 !bg-white" />
-      )}
-      <div className="flex items-start gap-3">
-        <span
-          className={[
-            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
-            isOutcome ? "bg-white text-zinc-900" : "bg-zinc-100 text-zinc-500",
-          ].join(" ")}
-        >
-          {data.index + 1}
-        </span>
-        <div>
-          <p className={["text-sm font-medium leading-snug", isOutcome ? "text-white" : "text-zinc-900"].join(" ")}>
-            {data.label}
-          </p>
-          <p className="mt-0.5 text-xs text-zinc-400">
-            {isOutcome ? "outcome" : `step ${data.index + 1}`}
-          </p>
-        </div>
-      </div>
-      {data.index < data.total - 1 && (
-        <Handle type="source" position={Position.Bottom} className="!border-zinc-300 !bg-white" />
-      )}
+    <div className={[className, styles.event_item].join(' ')}>
+      <time className="absolute left-[-160px] top-[-6px] text-nowrap text-gray-400 text-sm">
+        Wed 3rd Oct, 1905
+      </time>
+      <h2
+        className={cn(
+          'text-sm font-bold mb-8',
+          data.isFirst ? 'text-white' : 'text-black',
+        )}
+      >
+        {data.label}
+      </h2>
+      <p className={cn(data.isFirst ? 'text-gray-100' : 'text-gray-700')}>
+        {data.description}
+      </p>
     </div>
-  );
+  )
 }

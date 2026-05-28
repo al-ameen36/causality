@@ -41,7 +41,13 @@ export function AddNode({ data }: AddNodeProps) {
           aria-label="Generate timeline"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M6 1v10M6 1L2 5M6 1l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M6 1v10M6 1L2 5M6 1l4 4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </button>
       </div>

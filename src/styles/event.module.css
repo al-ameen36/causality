@@ -1,0 +1,26 @@
+.event_item {
+  position: relative;
+}
+
+.event_item::after {
+  --size: 10px;
+
+  content: '';
+  background-color: steelblue;
+  border-radius: 100%;
+  height: var(--size);
+  left: -26px;
+  position: absolute;
+  top: -2px;
+  width: var(--size);
+}
+
+.event_item::before {
+  content: '';
+  background-color: black;
+  height: 150%;
+  left: -23px;
+  position: absolute;
+  top: -30px;
+  width: 4px;
+}
