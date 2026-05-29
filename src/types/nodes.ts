@@ -1,9 +1,8 @@
 export type EventNode = {
   id: string
   label: string
-  description?: string
-  children?: EventNode[]
-  sources?: { url: string; title: string }[]
+  description: string
+  sources: { url: string; title: string }[]
 }
 
 export type EventNodeMetadata = {
