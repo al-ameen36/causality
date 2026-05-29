@@ -8,7 +8,7 @@ type Props = {
 
 export function EventItem({ data }: Props) {
   const className = cn(
-    'p-6 rounded-xl max-w-[400px] border border-blue-900',
+    'p-6 rounded-xl max-w-[min(500px,60vw)] border border-blue-900',
     data.isFirst ? 'bg-black/93' : 'bg-gray-200',
   )
   return (
