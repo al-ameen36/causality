@@ -1,22 +1,18 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { search } from '#/server/serp'
 import { extractOrganicUrls } from '#/server/extract'
-import { createBrowser, fetchArticle } from '#/server/fetch'
 import { runLLM } from '#/server/llm'
 import type { Doc } from '#/server/llm'
 import type { OrganicUrl } from '#/server/extract'
 
-const MAX_SITES_TO_SCRAPE = Number(process.env.MAX_SITES_TO_SCRAPE) || 10
-const MAX_CHARS_PER_DOC = Number(process.env.MAX_CHARS_PER_DOC) || 50000
-const MAX_CHARS_PER_BATCH = Number(process.env.MAX_CHARS_PER_BATCH) || 400000
+const MAX_SITES_TO_USE = Number(process.env.MAX_SITES_TO_SCRAPE) || 10
+const MAX_CHARS_PER_BATCH = Number(process.env.MAX_CHARS_PER_BATCH) || 20000
 
-function dedupeByUrl(
-  items: { url: string; title: string; snippet: string; source: string }[],
-) {
+function dedupeByUrl(items: OrganicUrl[]) {
   const seen = new Set<string>()
-  return items.filter((item) => {
-    if (seen.has(item.url)) return false
-    seen.add(item.url)
+  return items.filter((i) => {
+    if (seen.has(i.url)) return false
+    seen.add(i.url)
     return true
   })
 }
@@ -38,94 +34,110 @@ export const Route = createFileRoute('/api/analyze')({
         const mainEvent = event.trim()
         const queries = [
           mainEvent,
+          `${mainEvent} causes`,
           `${mainEvent} history`,
-          `${mainEvent} reasons causes`,
         ]
+
         const encoder = new TextEncoder()
 
         const stream = new ReadableStream({
           async start(controller) {
-            function send(eventName: string, data: unknown) {
-              const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`
-              controller.enqueue(encoder.encode(payload))
+            const send = (event: string, data: unknown) => {
+              controller.enqueue(
+                encoder.encode(
+                  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+                ),
+              )
             }
-
-            const browser = await createBrowser()
 
             try {
               send('status', { message: 'Searching the web...' })
 
-              const discovered: OrganicUrl[] = []
+              const allResults: OrganicUrl[] = []
 
-              for (const query of queries) {
-                const serpData = await search(query)
-                const urls = extractOrganicUrls(serpData)
-                discovered.push(...urls)
+              for (const q of queries) {
+                const serp = await search(q)
+                const urls = extractOrganicUrls(serp)
+                allResults.push(...urls)
               }
 
-              const unique = dedupeByUrl(discovered).slice(
-                0,
-                MAX_SITES_TO_SCRAPE,
-              )
+              const unique = dedupeByUrl(allResults).slice(0, MAX_SITES_TO_USE)
+
+              if (unique.length === 0) {
+                send('error', { message: 'No search results found' })
+                send('done', { message: 'Finished' })
+                return
+              }
+
               send('status', {
-                message: `Found ${unique.length} sources. Scraping...`,
+                message: `Analyzing ${unique.length} sources...`,
               })
 
-              const llmPromises: Promise<void>[] = []
-              let currentBatch: Doc[] = [] // ← Doc[] instead of typeof discovered
-              let currentBatchSize = 0
+              const docs: Doc[] = unique.map((u) => ({
+                url: u.url,
+                title: u.title || u.url,
+                text: u.snippet || u.title || '',
+                source: u.source,
+                snippet: u.snippet,
+              }))
+
+              const batchPromises: Promise<void>[] = []
+              let batch: Doc[] = []
+              let batchSize = 0
               let batchIndex = 0
 
-              function fireBatch(batch: Doc[], index: number) {
-                send('status', { message: `Analyzing batch ${index + 1}...` })
+              const flushBatch = (items: Doc[]) => {
+                if (!items.length) return
 
-                const promise = runLLM(mainEvent, batch, (cause) =>
-                  send('node', cause),
-                ).catch(() => {
-                  send('status', {
-                    message: `Could not analyze batch ${index + 1}`,
+                const currentIndex = batchIndex
+                batchIndex += 1
+
+                send('status', {
+                  message: `Analyzing batch ${currentIndex + 1}...`,
+                })
+
+                const p = runLLM(mainEvent, items, (node) => {
+                  send('node', node)
+                }).catch((err) => {
+                  send('error', {
+                    message:
+                      err instanceof Error
+                        ? `Batch ${currentIndex + 1} failed: ${err.message}`
+                        : `Batch ${currentIndex + 1} failed`,
                   })
                 })
 
-                llmPromises.push(promise)
+                batchPromises.push(p)
               }
 
-              for (const item of unique) {
-                const doc = await fetchArticle(browser, item.url)
-                if (!doc || !doc.text || doc.text.length < 500) continue
+              for (const doc of docs) {
+                send('source', { url: doc.url, title: doc.title })
 
-                const fullDoc = {
-                  url: doc.url,
-                  title: doc.title || item.title || '',
-                  text: doc.text,
-                  source: item.source,
-                  snippet: item.snippet,
-                }
-
-                const docSize = Math.min(fullDoc.text.length, MAX_CHARS_PER_DOC)
+                const size = doc.text.length
 
                 if (
-                  currentBatch.length > 0 &&
-                  currentBatchSize + docSize > MAX_CHARS_PER_BATCH
+                  batch.length > 0 &&
+                  batchSize + size > MAX_CHARS_PER_BATCH
                 ) {
-                  fireBatch(currentBatch, batchIndex++)
-                  currentBatch = []
-                  currentBatchSize = 0
+                  flushBatch(batch)
+                  batch = []
+                  batchSize = 0
                 }
 
-                currentBatch.push(fullDoc)
-                currentBatchSize += docSize
-                send('source', { url: fullDoc.url, title: fullDoc.title })
+                batch.push(doc)
+                batchSize += size
               }
 
-              if (currentBatch.length > 0) fireBatch(currentBatch, batchIndex)
+              if (batch.length > 0) {
+                flushBatch(batch)
+              }
 
-              if (llmPromises.length === 0) {
+              if (batchPromises.length === 0) {
                 send('error', {
                   message: 'No usable documents found for this event',
                 })
               } else {
-                await Promise.allSettled(llmPromises)
+                await Promise.allSettled(batchPromises)
               }
 
               send('done', { message: 'Analysis complete' })
@@ -133,8 +145,8 @@ export const Route = createFileRoute('/api/analyze')({
               send('error', {
                 message: err instanceof Error ? err.message : 'Unknown error',
               })
+              send('done', { message: 'Finished with errors' })
             } finally {
-              await browser.close()
               controller.close()
             }
           },

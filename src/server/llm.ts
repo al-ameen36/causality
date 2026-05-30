@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
 import { z } from 'zod'
 
-const MAX_CHARS_PER_DOC = Number(process.env.MAX_CHARS_PER_DOC) || 50000
+const MAX_CHARS_PER_DOC = Number(process.env.MAX_CHARS_PER_DOC) || 10000
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 1
 
 export const CauseNode = z.object({

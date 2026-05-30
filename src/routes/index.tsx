@@ -107,7 +107,7 @@ function Home() {
             ))}
 
             {streaming && (
-              <div className="flex items-center gap-3 max-w-md mx-auto px-1">
+              <div className="flex items-center justify-center gap-3 max-w-md mx-auto px-1">
                 <div className="flex gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.3s]" />
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />

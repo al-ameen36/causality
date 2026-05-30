@@ -3,6 +3,7 @@ type SerpResult = {
   title?: string
   snippet?: string
   source?: string
+  rank?: number
 }
 
 type SerpData = {
@@ -14,6 +15,7 @@ export type OrganicUrl = {
   title: string
   snippet: string
   source: string
+  rank?: number
 }
 
 export function extractOrganicUrls(serpData: SerpData): OrganicUrl[] {
@@ -22,11 +24,12 @@ export function extractOrganicUrls(serpData: SerpData): OrganicUrl[] {
     : []
 
   return results
+    .filter((r) => r?.link)
     .map((r) => ({
-      url: r.link ?? '',
+      url: r.link!,
       title: r.title ?? '',
       snippet: r.snippet ?? '',
       source: r.source ?? '',
+      rank: r.rank,
     }))
-    .filter((r) => r.url.length > 0)
 }
