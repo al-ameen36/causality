@@ -50,7 +50,7 @@ export function EventCard({ data }: Props) {
                   target="_blank"
                   rel="noopener noreferrer"
                   title={source.title}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors bg-slate-600 hover:bg-slate-700 text-slate-100 border border-slate-700"
                 >
                   {favicon && (
                     <img
