@@ -10,11 +10,24 @@ function Home() {
   const [input, setInput] = useState('')
   const { nodes, sources, status, error, loading, streaming, analyze } =
     useAnalysis()
-  const bottomRef = useRef<HTMLDivElement>(null)
 
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const sourcesContainerRef = useRef<HTMLDivElement>(null)
+
+  // 1. EXACT ORIGINAL VIEWPORT SCROLL LOGIC RESTORED (Keeps sources in dependencies)
   useEffect(() => {
     if (loading) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [nodes, status, sources, loading])
+
+  // 2. Isolated auto-scroll to reveal new items inside the sources container
+  useEffect(() => {
+    if (sourcesContainerRef.current) {
+      sourcesContainerRef.current.scrollTo({
+        top: sourcesContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      })
+    }
+  }, [sources])
 
   const handleSubmit = async () => {
     const query = input.trim()
@@ -27,30 +40,51 @@ function Home() {
     if (e.key === 'Enter') handleSubmit()
   }
 
+  // High contrast custom scrollbar variables applied cleanly onto standard elements
+  const scrollbarStyles =
+    '[scrollbar-color:theme(colors.slate.700)_transparent] ' +
+    '[&::-webkit-scrollbar]:w-2 ' +
+    '[&::-webkit-scrollbar]:h-2 ' +
+    '[&::-webkit-scrollbar-track]:bg-transparent ' +
+    '[&::-webkit-scrollbar-thumb]:bg-slate-700 ' +
+    '[&::-webkit-scrollbar-thumb]:rounded-full ' +
+    'hover:[&::-webkit-scrollbar-thumb]:bg-slate-500'
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-500/30">
-      <main className="flex-1 w-full max-w-2xl mx-auto px-4 pt-10 pb-36 overflow-y-auto space-y-8 scrollbar-thin">
+      {/* Main Container Layout */}
+      <main
+        className={`flex-1 w-full max-w-2xl mx-auto px-4 pt-10 pb-36 overflow-y-auto space-y-8 ${scrollbarStyles}`}
+      >
+        {/* Scraped sources Container element */}
         {sources.length > 0 && (
-          <div className="space-y-2 max-w-md mx-auto animate-in fade-in duration-300">
-            <h2 className="text-[11px] text-slate-500 font-medium tracking-widest uppercase px-1">
+          <div className="max-w-md mx-auto">
+            <h2 className="text-[11px] text-slate-500 font-medium tracking-widest uppercase mb-2">
               Sources scraped
             </h2>
-            {sources.map((source) => (
-              <div
-                key={source.url}
-                className="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 animate-in slide-in-from-bottom-2 duration-300"
-              >
-                <Globe className="w-3.5 h-3.5 text-slate-500 mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs text-slate-300 font-medium truncate">
-                    {source.title || new URL(source.url).hostname}
-                  </p>
-                  <p className="text-[11px] text-slate-600 truncate">
-                    {source.url}
-                  </p>
-                </div>
-              </div>
-            ))}
+            <div
+              ref={sourcesContainerRef}
+              className={`space-y-2 max-h-[150px] overflow-y-auto pr-2 rounded-xl ${scrollbarStyles}`}
+            >
+              {sources.map((source) => (
+                <a
+                  href={source.url}
+                  target="_blank"
+                  key={source.url}
+                  className="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 animate-in slide-in-from-bottom-2 duration-300"
+                >
+                  <Globe className="w-3.5 h-3.5 text-slate-500 mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs text-slate-300 font-medium truncate">
+                      {source.title || new URL(source.url).hostname}
+                    </p>
+                    <p className="text-[11px] text-slate-600 truncate">
+                      {source.url}
+                    </p>
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
         )}
 
@@ -117,6 +151,7 @@ function Home() {
         <div ref={bottomRef} />
       </main>
 
+      {/* Control Input Dock */}
       <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pt-16 pb-8 px-4 pointer-events-none">
         <div className="max-w-xl mx-auto w-full pointer-events-auto">
           <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-2xl p-1.5 pr-2 shadow-2xl transition-all duration-300 focus-within:border-blue-500/50 focus-within:ring-4 focus-within:ring-blue-500/[0.04]">

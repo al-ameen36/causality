@@ -122,38 +122,54 @@ async function _runLLM(
   })
 
   let buffer = ''
+  let depth = 0
+  let inString = false
+  let escaped = false
+  let objectStart = -1
 
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content ?? ''
-    buffer += delta
 
-    // Extract and emit every complete line
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? '' // last element may be incomplete — keep it
+    for (const char of delta) {
+      buffer += char
 
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      try {
-        const parsed = CauseNode.parse(JSON.parse(trimmed))
-        onNode(parsed)
-      } catch {
-        console.warn('[LLM] Could not parse line:', trimmed.slice(0, 100))
+      if (escaped) {
+        escaped = false
+        continue
       }
-    }
-  }
 
-  // Flush any remaining content in the buffer
-  const remaining = buffer.trim()
-  if (remaining) {
-    try {
-      const parsed = CauseNode.parse(JSON.parse(remaining))
-      onNode(parsed)
-    } catch {
-      console.warn(
-        '[LLM] Could not parse final buffer:',
-        remaining.slice(0, 100),
-      )
+      if (char === '\\' && inString) {
+        escaped = true
+        continue
+      }
+
+      if (char === '"') {
+        inString = !inString
+        continue
+      }
+
+      if (inString) continue
+
+      if (char === '{') {
+        if (depth === 0) objectStart = buffer.length - 1
+        depth++
+      } else if (char === '}') {
+        depth--
+        if (depth === 0 && objectStart !== -1) {
+          const candidate = buffer.slice(objectStart)
+          try {
+            const parsed = CauseNode.parse(JSON.parse(candidate))
+            onNode(parsed)
+          } catch {
+            console.warn(
+              '[LLM] Could not parse object:',
+              candidate.slice(0, 120),
+            )
+          }
+          buffer = ''
+          objectStart = -1
+        }
+      }
     }
   }
 }
