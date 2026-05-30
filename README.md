@@ -1,218 +1,81 @@
-Welcome to your new TanStack Start app! 
+# Causality 🕵️‍♂️
 
-# Getting Started
+Causality is a corporate investigation engine built to help you trace the root causes of major company events, market shifts, or business failures. Just type in an event (like _"How did Nvidia become so valuable?"_), and it will automatically crawl the web, batch the findings, and feed them to an LLM to generate a clean timeline of why things happened.
 
-To run this application:
+It's built on **TanStack Start** (React 19 + TanStack Router) and styled with a dark UI.
+
+---
+
+## ⚡ How it works under the hood
+
+1. **Search**: You input an event, and the backend generates a few target queries (like history, causes, etc.). It runs these in parallel via the **Bright Data SERP API**.
+2. **Collect**: It pulls organic search results, pulls out snippets/descriptions, deduplicates the URLs, and packs them into text chunks.
+3. **Analyze**: The chunks are queued up and sent to an LLM (using DeepSeek-V4-Pro on Featherless by default) with custom formatting rules.
+4. **Stream**: The frontend hooks into a server-sent events (SSE) stream, rendering each cause card with its sources and favicons as soon as the model spits them out.
+
+---
+
+## 🛠️ The Tech Stack
+
+- **Framework**: [TanStack Start](https://tanstack.com/start) (combining React 19, Vite, and Nitro).
+- **Styling**: Tailwind CSS v4 with custom dark mode colors and high-contrast scrollbars.
+- **APIs**: Bright Data SERP API for crawling Google search results, and the OpenAI SDK pointing to Featherless.
+
+---
+
+## ⚙️ Setting up your environment
+
+Grab a `.env.local` file and drop these config keys in:
+
+```env
+# SERP Scraper API
+BRIGHTDATA_API_KEY="your-brightdata-api-key"
+BRIGHTDATA_ZONE="serp_api1"
+
+# LLM Configs
+OPENAI_API_BASE_URL="https://api.featherless.ai/v1"
+OPENAI_API_KEY="your-featherless-api-key"
+OPENAI_MODEL="deepseek-ai/DeepSeek-V4-Pro"
+
+# Batching & Rate Limits
+MAX_CHARS_PER_DOC=10000       # Max characters kept per page snippet
+MAX_CHARS_PER_BATCH=400000    # How much context to send to the LLM per batch
+MAX_CONCURRENT=1              # Number of concurrent LLM API calls allowed
+MAX_SITES_TO_SCRAPE=10        # Limit on search results to parse
+```
+
+---
+
+## 💻 Running it locally
+
+### 1. Install & Spin up the dev server
+
+Install dependencies and start Vite:
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-# Building For Production
+Open up [http://localhost:3000](http://localhost:3000) and you're good to go!
 
-To build this application for production:
+## 📦 Production & Builds
+
+If you want to bundle it up for production:
 
 ```bash
 pnpm build
+node .output/server/index.mjs
 ```
 
-## Testing
+The app uses Nitro as its server engine, meaning the build output is just a simple, self-contained Node.js server. You can drop it on VPS setups, Fly.io, Render, or customize it for serverless platforms like Vercel or Cloudflare.
 
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
+---
 
-```bash
-pnpm test
-```
+## 📂 Key files to look at
 
-## Styling
-
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `pnpm add @tailwindcss/vite tailwindcss --dev`
-
-## Linting & Formatting
-
-
-This project uses [eslint](https://eslint.org/) and [prettier](https://prettier.io/) for linting and formatting. Eslint is configured using [tanstack/eslint-config](https://tanstack.com/config/latest/docs/eslint). The following scripts are available:
-
-```bash
-pnpm lint
-pnpm format
-pnpm check
-```
-
-
-## Deploy with Nitro
-
-This project uses Nitro as a generic server adapter, so it can run on any Node-compatible host.
-
-```bash
-npm run build
-node dist/server/index.mjs
-```
-
-The build output is a self-contained Node server. To deploy, push the `dist/` directory to your host (Render, Fly.io, your own VPS, etc.) and run the server command above.
-
-For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda, etc.) and tuning, see https://v3.nitro.build/deploy.
-
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+- [index.tsx](file:///home/al-ameen/Documents/Projects/causality/src/routes/index.tsx) - The main page interface (search input, status indicators, and streaming cards).
+- [analyze.ts](file:///home/al-ameen/Documents/Projects/causality/src/routes/api/analyze.ts) - The SSE API endpoint handling the search queries and streaming LLM batches.
+- [useAnalysis.ts](file:///home/al-ameen/Documents/Projects/causality/src/hooks/useAnalysis.ts) - The React hook that streams events and manages state.
+- [serp.ts](file:///home/al-ameen/Documents/Projects/causality/src/server/serp.ts) - The search wrapper hitting Bright Data.
+- [llm.ts](file:///home/al-ameen/Documents/Projects/causality/src/server/llm.ts) - The LLM client prompting and parsing NDJSON stream outputs.
