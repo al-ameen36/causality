@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { search } from '#/server/serp'
-import { extractOrganicUrls } from '#/server/extract'
+import { extractOrganicUrls, scrapeUrlContent } from '#/server/extract'
 import { runLLM } from '#/server/llm'
 import type { Doc } from '#/server/llm'
 import type { OrganicUrl } from '#/server/extract'
@@ -55,10 +55,18 @@ export const Route = createFileRoute('/api/analyze')({
 
               const allResults: OrganicUrl[] = []
 
-              for (const q of queries) {
-                const serp = await search(q)
-                const urls = extractOrganicUrls(serp)
-                allResults.push(...urls)
+              // 1. Run search queries in parallel
+              const serpResults = await Promise.allSettled(
+                queries.map((q) => search(q)),
+              )
+
+              for (const res of serpResults) {
+                if (res.status === 'fulfilled') {
+                  const urls = extractOrganicUrls(res.value)
+                  allResults.push(...urls)
+                } else {
+                  console.error('[Analyze API] Search query failed:', res.reason)
+                }
               }
 
               const unique = dedupeByUrl(allResults).slice(0, MAX_SITES_TO_USE)
@@ -70,16 +78,52 @@ export const Route = createFileRoute('/api/analyze')({
               }
 
               send('status', {
-                message: `Analyzing ${unique.length} sources...`,
+                message: `Found ${unique.length} sources. Scraping content...`,
               })
 
-              const docs: Doc[] = unique.map((u) => ({
-                url: u.url,
-                title: u.title || u.url,
-                text: u.snippet || u.title || '',
-                source: u.source,
-                snippet: u.snippet,
-              }))
+              // 2. Fetch full text content with limited concurrency (max 3 concurrent scrapes)
+              const docs: Doc[] = new Array(unique.length)
+              let index = 0
+              const CONCURRENCY_LIMIT = 3
+
+              async function worker() {
+                while (index < unique.length) {
+                  const i = index++
+                  const u = unique[i]
+                  send('status', { message: `Scraping: ${u.title || u.url}` })
+                  try {
+                    const fullText = await scrapeUrlContent(u.url)
+                    docs[i] = {
+                      url: u.url,
+                      title: u.title || u.url,
+                      text: fullText || u.snippet || u.title || '',
+                      source: u.source,
+                      snippet: u.snippet,
+                    }
+                  } catch (err) {
+                    console.error(`[Analyze API] Error scraping ${u.url}:`, err)
+                    docs[i] = {
+                      url: u.url,
+                      title: u.title || u.url,
+                      text: u.snippet || u.title || '',
+                      source: u.source,
+                      snippet: u.snippet,
+                    }
+                  }
+                  // Notify client about this source being loaded
+                  send('source', { url: docs[i].url, title: docs[i].title })
+                }
+              }
+
+              const workers = Array.from(
+                { length: Math.min(CONCURRENCY_LIMIT, unique.length) },
+                worker,
+              )
+              await Promise.all(workers)
+
+              send('status', {
+                message: `Analyzing batch content...`,
+              })
 
               const batchPromises: Promise<void>[] = []
               let batch: Doc[] = []
@@ -111,8 +155,6 @@ export const Route = createFileRoute('/api/analyze')({
               }
 
               for (const doc of docs) {
-                send('source', { url: doc.url, title: doc.title })
-
                 const size = doc.text.length
 
                 if (
@@ -127,6 +169,7 @@ export const Route = createFileRoute('/api/analyze')({
                 batch.push(doc)
                 batchSize += size
               }
+
 
               if (batch.length > 0) {
                 flushBatch(batch)
