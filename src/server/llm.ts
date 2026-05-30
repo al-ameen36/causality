@@ -1,19 +1,14 @@
 import OpenAI from 'openai'
 import { z } from 'zod'
 
-const CauseNode = z.object({
+export const CauseNode = z.object({
   id: z.string(),
   label: z.string(),
   description: z.string(),
   sources: z.array(z.object({ url: z.string(), title: z.string() })),
 })
 
-const AnalysisResultSchema = z.object({
-  causes: z.array(CauseNode),
-})
-
 export type CauseNode = z.infer<typeof CauseNode>
-export type AnalysisResult = z.infer<typeof AnalysisResultSchema>
 
 export type Doc = {
   url: string
@@ -40,19 +35,12 @@ Rules:
 - Keep every description under 40 words
 - Cite sources from the provided context only
 - Order causes from most to least impactful
-- Respond with raw JSON only — no markdown, no code fences, no explanation
 
-You MUST respond with only a valid JSON object matching this exact structure:
-{
-  "causes": [
-    {
-      "id": "unique-kebab-case-id",
-      "label": "Short cause title",
-      "description": "Concise explanation under 40 words.",
-      "sources": [{ "url": "string", "title": "string" }]
-    }
-  ]
-}`
+Output one JSON object per line (NDJSON). Each line must be a complete, valid JSON object for a single cause.
+No wrapper object, no array brackets, no markdown, no explanation — just one cause per line, like this:
+
+{"id":"unique-kebab-case-id","label":"Short cause title","description":"Concise explanation under 40 words.","sources":[{"url":"string","title":"string"}]}
+{"id":"unique-kebab-case-id","label":"Short cause title","description":"Concise explanation under 40 words.","sources":[{"url":"string","title":"string"}]}`
 
 const MAX_CHARS_PER_DOC = 50000
 const MAX_CONCURRENT = 1
@@ -60,8 +48,8 @@ const MAX_CONCURRENT = 1
 // -- Queue --
 let active = 0
 const queue: {
-  fn: () => Promise<AnalysisResult>
-  resolve: (v: AnalysisResult) => void
+  fn: () => Promise<void>
+  resolve: () => void
   reject: (e: unknown) => void
 }[] = []
 
@@ -81,7 +69,7 @@ function dequeue() {
     })
 }
 
-function enqueue(fn: () => Promise<AnalysisResult>): Promise<AnalysisResult> {
+function enqueue(fn: () => Promise<void>): Promise<void> {
   return new Promise((resolve, reject) => {
     queue.push({ fn, resolve, reject })
     console.log(`[QUEUE] ${queue.length} waiting, ${active} active`)
@@ -105,17 +93,6 @@ ${text}${truncated ? '\n[truncated]' : ''}
     .join('\n\n')
 }
 
-function sanitizeResult(result: AnalysisResult): AnalysisResult {
-  return {
-    causes: Array.isArray(result.causes)
-      ? result.causes.map((c) => ({
-          ...c,
-          sources: Array.isArray(c.sources) ? c.sources : [],
-        }))
-      : [],
-  }
-}
-
 function createClient() {
   return new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -123,27 +100,18 @@ function createClient() {
   })
 }
 
-function attemptRecovery(text: string): unknown | null {
-  const lastComplete = text.lastIndexOf('},\n    {')
-  if (lastComplete === -1) return null
-  try {
-    const recovered = text.slice(0, lastComplete + 1) + '\n  ]\n}'
-    return JSON.parse(recovered)
-  } catch {
-    return null
-  }
-}
-
 async function _runLLM(
   mainEvent: string,
   docs: Doc[],
-): Promise<AnalysisResult> {
+  onNode: (node: CauseNode) => void,
+): Promise<void> {
   const client = createClient()
   const context = buildContext(docs)
 
-  const response = await client.chat.completions.create({
+  const stream = await client.chat.completions.create({
     model: process.env.OPENAI_MODEL!,
     max_tokens: 32000,
+    stream: true,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       {
@@ -153,66 +121,47 @@ async function _runLLM(
     ],
   })
 
-  const message = response.choices[0]?.message
-  const finishReason = response.choices[0]?.finish_reason
-  const raw =
-    message?.content ||
-    (message as unknown as { reasoning?: string })?.reasoning
+  let buffer = ''
 
-  if (!raw) {
-    console.error('[LLM] Full response:', JSON.stringify(response, null, 2))
-    throw new Error(`LLM returned no content. finish_reason: ${finishReason}`)
-  }
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content ?? ''
+    buffer += delta
 
-  if (finishReason === 'length') {
-    console.warn('[LLM] Response cut off, attempting partial recovery...')
-    const lastValidClose = raw.lastIndexOf('},\n    {')
-    if (lastValidClose !== -1) {
-      const recovered = raw.slice(0, lastValidClose) + '}]\n}'
+    // Extract and emit every complete line
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? '' // last element may be incomplete — keep it
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
       try {
-        const parsed = JSON.parse(recovered)
-        const validated = AnalysisResultSchema.parse(parsed)
-        return sanitizeResult(validated)
-      } catch (err) {
-        console.error('[LLM] Parse/validation error:', (err as Error).message)
-        console.error('[LLM] Raw output:', raw.slice(0, 500))
-        throw new Error(
-          `Failed to parse LLM response: ${(err as Error).message}`,
-        )
+        const parsed = CauseNode.parse(JSON.parse(trimmed))
+        onNode(parsed)
+      } catch {
+        console.warn('[LLM] Could not parse line:', trimmed.slice(0, 100))
       }
     }
-    throw new Error('LLM response cut off and recovery failed')
   }
 
-  const cleaned = raw
-    .replace(/^```(?:json)?\n?/i, '')
-    .replace(/\n?```$/, '')
-    .trim()
-
-  try {
-    let parsed: unknown
+  // Flush any remaining content in the buffer
+  const remaining = buffer.trim()
+  if (remaining) {
     try {
-      parsed = JSON.parse(cleaned)
+      const parsed = CauseNode.parse(JSON.parse(remaining))
+      onNode(parsed)
     } catch {
-      console.warn('[LLM] JSON parse failed, attempting partial recovery...')
-      parsed = attemptRecovery(cleaned)
-      if (!parsed)
-        throw new Error('Recovery failed — no complete cause objects found')
+      console.warn(
+        '[LLM] Could not parse final buffer:',
+        remaining.slice(0, 100),
+      )
     }
-
-    const validated = AnalysisResultSchema.parse(parsed)
-    return sanitizeResult(validated)
-  } catch (err) {
-    console.error('[LLM] Parse/validation error:', (err as Error).message)
-    console.error('[LLM] Raw output:', raw.slice(0, 500))
-    throw new Error(`Failed to parse LLM response: ${(err as Error).message}`)
   }
 }
 
-// Public — automatically queued
 export function runLLM(
   mainEvent: string,
   docs: Doc[],
-): Promise<AnalysisResult> {
-  return enqueue(() => _runLLM(mainEvent, docs))
+  onNode: (node: CauseNode) => void,
+): Promise<void> {
+  return enqueue(() => _runLLM(mainEvent, docs, onNode))
 }

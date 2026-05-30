@@ -3,6 +3,8 @@ import { search } from '#/server/serp'
 import { extractOrganicUrls } from '#/server/extract'
 import { createBrowser, fetchArticle } from '#/server/fetch'
 import { runLLM } from '#/server/llm'
+import type { Doc } from '#/server/llm'
+import type { OrganicUrl } from '#/server/extract'
 
 const MAX_CHARS_PER_DOC = 50000
 const MAX_CHARS_PER_BATCH = 400000
@@ -53,12 +55,8 @@ export const Route = createFileRoute('/api/analyze')({
             try {
               send('status', { message: 'Searching the web...' })
 
-              const discovered: {
-                url: string
-                title: string
-                snippet: string
-                source: string
-              }[] = []
+              const discovered: OrganicUrl[] = []
+
               for (const query of queries) {
                 const serpData = await search(query)
                 const urls = extractOrganicUrls(serpData)
@@ -74,21 +72,21 @@ export const Route = createFileRoute('/api/analyze')({
               })
 
               const llmPromises: Promise<void>[] = []
-              let currentBatch: typeof discovered = []
+              let currentBatch: Doc[] = [] // ← Doc[] instead of typeof discovered
               let currentBatchSize = 0
               let batchIndex = 0
 
-              function fireBatch(batch: typeof discovered, index: number) {
+              function fireBatch(batch: Doc[], index: number) {
                 send('status', { message: `Analyzing batch ${index + 1}...` })
-                const promise = runLLM(mainEvent, batch)
-                  .then((result) => {
-                    for (const cause of result.causes) send('node', cause)
+
+                const promise = runLLM(mainEvent, batch, (cause) =>
+                  send('node', cause),
+                ).catch(() => {
+                  send('status', {
+                    message: `Could not analyze batch ${index + 1}`,
                   })
-                  .catch(() => {
-                    send('status', {
-                      message: `Could not analyze batch ${index + 1}`,
-                    })
-                  })
+                })
+
                 llmPromises.push(promise)
               }
 
