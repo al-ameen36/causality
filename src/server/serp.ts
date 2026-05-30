@@ -1,3 +1,6 @@
+const SERPAPI_KEY = process.env.SERPAPI_KEY
+const SERPAPI_URL = process.env.SERPAPI_URL
+
 export type SerpResponse = {
   organic_results?: {
     link?: string
@@ -15,12 +18,12 @@ export const search = async (
   const params = new URLSearchParams({
     engine,
     q: query,
-    api_key: process.env.SERPAPI_KEY ?? '',
+    api_key: SERPAPI_KEY ?? '',
   })
 
-  const res = await fetch(`${process.env.SERPAPI_URL}?${params.toString()}`, {
+  const res = await fetch(`${SERPAPI_URL}?${params.toString()}`, {
     headers: {
-      Authorization: `Bearer ${process.env.SERPAPI_KEY}`,
+      Authorization: `Bearer ${SERPAPI_KEY}`,
     },
   })
 

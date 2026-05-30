@@ -6,9 +6,9 @@ import { runLLM } from '#/server/llm'
 import type { Doc } from '#/server/llm'
 import type { OrganicUrl } from '#/server/extract'
 
-const MAX_CHARS_PER_DOC = 50000
-const MAX_CHARS_PER_BATCH = 400000
-const MAX_SITES_TO_SCRAPE = 10
+const MAX_SITES_TO_SCRAPE = Number(process.env.MAX_SITES_TO_SCRAPE) || 10
+const MAX_CHARS_PER_DOC = Number(process.env.MAX_CHARS_PER_DOC) || 50000
+const MAX_CHARS_PER_BATCH = Number(process.env.MAX_CHARS_PER_BATCH) || 400000
 
 function dedupeByUrl(
   items: { url: string; title: string; snippet: string; source: string }[],

@@ -2,91 +2,25 @@ import { createFileRoute } from '@tanstack/react-router'
 import { EventCard } from '#/components/event_node'
 import { useState, useEffect, useRef } from 'react'
 import { SendHorizontal, Sparkles, AlertCircle, Globe } from 'lucide-react'
-import type { EventNode } from '#/types/nodes'
+import { useAnalysis } from '#/hooks/useAnalysis'
 
 export const Route = createFileRoute('/')({ component: Home })
 
-type ScrapedSource = { url: string; title: string }
-
 function Home() {
-  const [nodes, setNodes] = useState<EventNode[]>([])
-  const [sources, setSources] = useState<ScrapedSource[]>([])
   const [input, setInput] = useState('')
-  const [status, setStatus] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
+  const { nodes, sources, status, error, loading, streaming, analyze } =
+    useAnalysis()
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (loading) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
+    if (loading) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [nodes, status, sources, loading])
 
   const handleSubmit = async () => {
-    const event = input.trim()
-    if (!event || loading) return
-
-    setLoading(true)
-    setError(null)
-    setStatus('Initializing root-cause analysis...')
-    setNodes([])
-    setSources([])
-
-    try {
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event }),
-      })
-
-      if (!res.ok || !res.body) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(
-          body.error ?? `Request failed with status ${res.status}`,
-        )
-      }
-
-      setInput('')
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-
-        for (const part of parts) {
-          const eventLine = part.match(/^event: (\w+)/m)?.[1]
-          const dataLine = part.match(/^data: (.+)/m)?.[1]
-          if (!eventLine || !dataLine) continue
-
-          const data = JSON.parse(dataLine)
-
-          if (eventLine === 'status') setStatus(data.message)
-          if (eventLine === 'source') setSources((prev) => [...prev, data])
-          if (eventLine === 'error') setError(data.message)
-          if (eventLine === 'node') {
-            setNodes((prev) => [...prev, data])
-            setStatus(null)
-          }
-          if (eventLine === 'done') {
-            setStatus(null)
-            setLoading(false)
-          }
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setLoading(false)
-    }
+    const query = input.trim()
+    if (!query || loading) return
+    setInput('')
+    await analyze(query)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -96,7 +30,6 @@ function Home() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-500/30">
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 pt-10 pb-36 overflow-y-auto space-y-8 scrollbar-thin">
-        {/* Scraped sources feed */}
         {sources.length > 0 && (
           <div className="space-y-2 max-w-md mx-auto animate-in fade-in duration-300">
             <h2 className="text-[11px] text-slate-500 font-medium tracking-widest uppercase px-1">
@@ -138,6 +71,19 @@ function Home() {
                 />
               </div>
             ))}
+
+            {streaming && (
+              <div className="flex items-center gap-3 max-w-md mx-auto px-1">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.3s]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce" />
+                </div>
+                <p className="text-xs text-slate-500 font-medium">
+                  Analyzing sources, more results incoming...
+                </p>
+              </div>
+            )}
           </div>
         ) : !loading && !error ? (
           <div className="h-[50vh] flex flex-col items-center justify-center text-center px-4 animate-in fade-in duration-700">
@@ -154,7 +100,6 @@ function Home() {
           </div>
         ) : null}
 
-        {/* Status indicator */}
         {status && (
           <div className="flex items-center justify-center gap-3 p-4 rounded-xl bg-slate-900/40 border border-slate-900 text-slate-400 text-xs font-medium tracking-wide animate-pulse max-w-md mx-auto">
             <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] animate-ping" />

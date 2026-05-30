@@ -1,6 +1,9 @@
 import OpenAI from 'openai'
 import { z } from 'zod'
 
+const MAX_CHARS_PER_DOC = Number(process.env.MAX_CHARS_PER_DOC) || 50000
+const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 1
+
 export const CauseNode = z.object({
   id: z.string(),
   label: z.string(),
@@ -32,7 +35,7 @@ GOOD examples:
 
 Rules:
 - Each cause must be independent and specific
-- Keep every description under 40 words
+- Keep every description under 100 words
 - Cite sources from the provided context only
 - Order causes from most to least impactful
 
@@ -41,9 +44,6 @@ No wrapper object, no array brackets, no markdown, no explanation — just one c
 
 {"id":"unique-kebab-case-id","label":"Short cause title","description":"Concise explanation under 40 words.","sources":[{"url":"string","title":"string"}]}
 {"id":"unique-kebab-case-id","label":"Short cause title","description":"Concise explanation under 40 words.","sources":[{"url":"string","title":"string"}]}`
-
-const MAX_CHARS_PER_DOC = 50000
-const MAX_CONCURRENT = 1
 
 // -- Queue --
 let active = 0
